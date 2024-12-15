@@ -128,7 +128,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if iteration == 300:
                 gaussians.only_prune(0.02)
             if opt.densify_from_iter < iteration <= opt.densify_until_iter:
-                # 在图像空间中跟踪最大半径以进行剪枝。
                 if iteration % 3000 <= 1000 and 3000 < iteration <= 10000:
                     if iteration % 300 == 0:
                         gaussians.only_prune(0.005)
