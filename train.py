@@ -109,8 +109,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
 
-            """
-            # Densification of 3DGS
+            
+            """# Densification of 3DGS
             if iteration < opt.densify_until_iter:
                 # Keep track of max radii in image-space for pruning
                 gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
@@ -121,25 +121,20 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
                 
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
-                    gaussians.reset_opacity()
-            """
+                    gaussians.reset_opacity()"""
 
             # Our efficient density control
             if iteration == 300:
                 gaussians.only_prune(0.02)
-            if opt.densify_from_iter < iteration <= opt.densify_until_iter:
-                if iteration % 3000 <= 1000 and 3000 < iteration <= 10000:
-                    if iteration % 300 == 0:
-                        gaussians.only_prune(0.005)
-                else:
-                    gaussians.add_densification_stats_abs(viewspace_point_tensor, visibility_filter)
-                    if iteration % opt.densification_interval == 0:
-                        gaussians.densify_and_prune_EDC(opt.densify_grad_threshold, 0.005,
-                                                        scene.cameras_extent, iteration)
-            if iteration % opt.opacity_reset_interval == 0:
-                gaussians.reset_opacity()
-                if iteration >= 6000:
-                    gaussians.only_prune(0.1)
+            if opt.densify_from_iter < iteration < opt.densify_until_iter:
+                gaussians.add_densification_stats_abs(viewspace_point_tensor, visibility_filter)
+                """gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)"""
+                if iteration % opt.densification_interval == 0:
+                    gaussians.densify_and_prune_EDC(opt.densify_grad_threshold, 0.005, scene.cameras_extent, iteration, args.rate)
+                if iteration % 3000 == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
+                    gaussians.reset_opacity()
+                if iteration % 3000 == 300 and iteration > 2000:
+                    gaussians.only_prune(0.05)
 
             # Optimizer step
             if iteration < opt.iterations:
@@ -181,8 +176,9 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
     # Report test and samples of training set
     if iteration in testing_iterations:
         torch.cuda.empty_cache()
-        validation_configs = ({'name': 'test', 'cameras' : scene.getTestCameras()}, 
+        validation_configs = ({'name': 'test', 'cameras' : scene.getTestCameras()},
                               {'name': 'train', 'cameras' : scene.getTrainCameras()})
+
         print(' ')
         for config in validation_configs:
             if config['cameras'] and len(config['cameras']) > 0:
