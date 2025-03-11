@@ -208,7 +208,7 @@ class GaussianModel:
         PlyData([el]).write(path)
 
     def reset_opacity(self):
-        opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity)*0.1))
+        opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity)*0.01))
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
         self._opacity = optimizable_tensors["opacity"]
 
@@ -410,10 +410,12 @@ class GaussianModel:
         self.xyz_gradient_accum[update_filter] += torch.norm(viewspace_point_tensor.grad[update_filter,:2], dim=-1, keepdim=True)
         self.denom[update_filter] += 1
 
+    # EDC
     def add_densification_stats_abs(self, viewspace_point_tensor, update_filter):
         self.xyz_gradient_accum[update_filter] += torch.norm(viewspace_point_tensor.grad[update_filter,2:], dim=-1, keepdim=True)
         self.denom[update_filter] += 1
 
+    # EDC
     def only_prune(self, min_opacity):
         prune_mask = (self.get_opacity < min_opacity).squeeze()
         self.prune_points(prune_mask)
@@ -424,19 +426,10 @@ class GaussianModel:
 
         torch.cuda.empty_cache()
 
-    def densify_and_prune_EDC(self, max_grad, min_opacity, extent, iteration):
+    # EDC
+    def densify_and_prune_EDC(self, max_grad, min_opacity, extent, iteration, rate):
         grads = self.xyz_gradient_accum / self.denom
-        if iteration < 3500:
-            max_grad = 2 * max_grad
-        elif 3500 < iteration < 6500:
-            max_grad = 1.5 * max_grad
-        elif 6500 < iteration < 9500:
-            max_grad = 1.2 * max_grad
-        grads = grads * (1 + self.denom / 100 * 0.3)
-        grads[grads.isnan()] = 0.0
-
-        self.densify_and_split_EDC(grads, max_grad, extent)
-
+        self.densify_and_split_EDC(grads, max_grad, rate)
         prune_mask = (self.get_opacity < min_opacity).squeeze()
         if iteration > 3000:
             big_points_ws = self.get_scaling.max(dim=1).values > 0.1 * extent
@@ -445,14 +438,12 @@ class GaussianModel:
 
         torch.cuda.empty_cache()
 
-    def densify_and_split_EDC(self, grads, grad_threshold, scene_extent):
+    # EDC
+    def densify_and_split_EDC(self, grads, grad_threshold, rate):
         n_init_points = self.get_xyz.shape[0]
         padded_grad = torch.zeros(n_init_points, device="cuda")
         padded_grad[:grads.shape[0]] = grads.squeeze()
         selected_pts_mask = torch.where(padded_grad >= grad_threshold, True, False)
-        selected_pts_mask = torch.logical_and(selected_pts_mask,
-                                              torch.max(self.get_scaling,
-                                                        dim=1).values > self.percent_dense * scene_extent)
 
         stds = self.get_scaling[selected_pts_mask]
         max_values, max_indices = torch.max(stds, dim=1, keepdim=True)
@@ -461,9 +452,7 @@ class GaussianModel:
         samples = torch.cat([samples, -samples], dim=0)
         rots = build_rotation(self._rotation[selected_pts_mask]).repeat(2, 1, 1)
         new_xyz = torch.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + self.get_xyz[selected_pts_mask].repeat(2, 1)
-        rate = 0.85
         new_scaling = self.scaling_inverse_activation(stds.scatter_(1, max_indices, max_values / (rate * 2)).repeat(2, 1) * rate)
-
         new_rotation = self._rotation[selected_pts_mask].repeat(2, 1)
         new_features_dc = self._features_dc[selected_pts_mask].repeat(2, 1, 1)
         new_features_rest = self._features_rest[selected_pts_mask].repeat(2, 1, 1)
