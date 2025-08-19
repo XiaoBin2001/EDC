@@ -1,3 +1,5 @@
+**Due to resubmission reasons, this version has been abandoned. The improved version is available at: https://xiaobin2001.github.io/improved-gs-web . **
+
 ### Efficient Density Control for 3D Gaussian Splatting
 
 Xiaobin Deng, Changyu Diao, Min Li, Ruohan Yu, Duanqing Xu<br>
@@ -37,4 +39,5 @@ You can adjust the ratio by which opacity is reduced after splitting in the `den
 }</code></pre>
   </div>
 </section>
+
 
